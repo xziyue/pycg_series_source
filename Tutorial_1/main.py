@@ -5,19 +5,19 @@ from OpenGL.arrays.vbo import VBO
 # we will always call glfw functinos with the glfw prefix
 import glfw
 import numpy as np
-import os
+import platform
 import ctypes
 
 windowSize = (800, 600)
 windowBackgroundColor = (0.7, 0.7, 0.7, 1.0)
 
 triangleVertices = np.array(
-    [-0.5, -0.5, 0.0, # pos 0
-     1.0, 0.0, 0.0, # color 0
-     0.5, -0.5, 0.0, # pos 1
-     1.0, 1.0, 0.0, # color 1
-     0.0, 0.5, 0.0, # pos 2
-     1.0, 0.0, 1.0 # color 2
+    [-0.5, -0.5, 0.0,  # pos 0
+     1.0, 0.0, 0.0,  # color 0
+     0.5, -0.5, 0.0,  # pos 1
+     1.0, 1.0, 0.0,  # color 1
+     0.0, 0.5, 0.0,  # pos 2
+     1.0, 0.0, 1.0  # color 2
      ],
     np.float32  # must use 32-bit floating point numbers
 )
@@ -44,6 +44,7 @@ FragColor = vec4(bColor, 1.0f);
 }
 '''
 
+
 # compile a shader
 # returns the shader id if compilation is successful
 # otherwise, raise a runtime error
@@ -60,12 +61,17 @@ def compile_shader(shaderType, shaderSource):
         raise RuntimeError('unable to compile shader')
     return shaderId
 
+
 def debug_message_callback(source, msg_type, msg_id, severity, length, raw, user):
     msg = raw[0:length]
     print('debug', source, msg_type, msg_id, severity, msg)
 
+
 def window_resize_callback(theWindow, width, height):
+    global windowSize
+    windowSize = (width, height)
     glViewport(0, 0, width, height)
+
 
 if __name__ == '__main__':
 
@@ -77,7 +83,7 @@ if __name__ == '__main__':
     glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
-    if os.name.lower == 'darwin':
+    if platform.system().lower() == 'darwin':
         # not sure if this is necessary, but is suggested by learnopengl
         glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
 
@@ -86,14 +92,16 @@ if __name__ == '__main__':
     # make window the current context
     glfw.make_context_current(theWindow)
 
-    # enable debug output
-    glEnable(GL_DEBUG_OUTPUT)
-    glDebugMessageCallback(GLDEBUGPROC(debug_message_callback), None)
+    if platform.system().lower() != 'darwin':
+        # enable debug output
+        # doesn't seem to work on macOS
+        glEnable(GL_DEBUG_OUTPUT)
+        glDebugMessageCallback(GLDEBUGPROC(debug_message_callback), None)
     # set resizing callback function
     glfw.set_framebuffer_size_callback(theWindow, window_resize_callback)
 
     # create VBO to store vertices
-    verticesVBO = VBO(triangleVertices, usage = 'GL_STATIC_DRAW')
+    verticesVBO = VBO(triangleVertices, usage='GL_STATIC_DRAW')
     verticesVBO.create_buffers()
 
     # create VAO to describe array information
@@ -116,7 +124,7 @@ if __name__ == '__main__':
 
     # configure the second 3-vector (color)
     # the offset is 3 * 4 = 12 bytes
-    glVertexAttribPointer(1, 3, GL_FLOAT,  GL_FALSE, 6 * 4, ctypes.c_void_p(3 * 4))
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * 4, ctypes.c_void_p(3 * 4))
     glEnableVertexAttribArray(1)
 
     # unbind VBO
@@ -143,11 +151,8 @@ if __name__ == '__main__':
     glDeleteShader(vertexShaderId)
     glDeleteShader(fragmentShaderId)
 
-
-
     # keep rendering until the window should be closed
     while not glfw.window_should_close(theWindow):
-
         # set background color
         glClearColor(*windowBackgroundColor)
         glClear(GL_COLOR_BUFFER_BIT)
@@ -166,7 +171,6 @@ if __name__ == '__main__':
         glfw.poll_events()
         # swap frame buffer
         glfw.swap_buffers(theWindow)
-
 
     # clean up VAO
     glDeleteVertexArrays(1, [triangleVAO])
