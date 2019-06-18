@@ -97,6 +97,7 @@ if __name__ == '__main__':
         # doesn't seem to work on macOS
         glEnable(GL_DEBUG_OUTPUT)
         glDebugMessageCallback(GLDEBUGPROC(debug_message_callback), None)
+
     # set resizing callback function
     glfw.set_framebuffer_size_callback(theWindow, window_resize_callback)
 

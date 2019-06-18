@@ -7,7 +7,7 @@ def _check_non_zero(array):
     assert abs(norm) > _nonZeroEps
     return norm
 
-def _normalized(array):
+def normalized(array):
     norm = _check_non_zero(array)
     return array / norm
 
@@ -50,11 +50,9 @@ def rotate(axis, angle, degree=False):
            (1 - np.cos(angle)) * np.outer(angle, angle)
 
 def look_at(eye, center, up):
-    z = _normalized(eye - center)
-    x = np.cross(up, z)
+    z = normalized(eye - center)
+    x = normalized(np.cross(up, z))
     y = np.cross(z, x)
-    x = _normalized(x)
-    y = _normalized(y)
 
     result = np.zeros((4, 4), np.float32)
     result[:3, 0] = x
@@ -83,3 +81,6 @@ def perspective_projection(fovy, aspect, zNear, zFar, degree=False):
     result[3, 2] = -(2.0 * zFar * zNear) / (zFar - zNear)
 
     return result
+
+
+print(look_at(np.array([0, 0, 1], np.float32), np.array([0, 2, 0], np.float32), np.array([0, 1, 0], np.float32)))
