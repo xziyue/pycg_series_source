@@ -33,6 +33,7 @@ def scale(*args):
 
 def translate(*args):
     assert len(args) == 3
+
     result = np.identity(4, dtype=np.float32)
     result[0, 3] = args[0]
     result[1, 3] = args[1]
@@ -40,14 +41,32 @@ def translate(*args):
 
     return result
 
+def _cross_product_matrix(axis):
+    return np.asarray(
+        (
+            (0, -axis[2], axis[1]),
+            (axis[2], 0, -axis[0]),
+            (-axis[1], axis[0], 0)
+         ),
+        np.float32
+    )
+
 def rotate(axis, angle, degree=False):
     assert axis.size == 3
+
+    axis = normalized(axis)
 
     if degree:
         angle = np.deg2rad(angle)
 
-    return np.cos(angle) * np.identity(4, dtype=np.float32) + np.sin(angle) * np.cross(axis, axis) + \
-           (1 - np.cos(angle)) * np.outer(angle, angle)
+    mat3 = np.cos(angle) * np.identity(3, dtype=np.float32) + np.sin(angle) * _cross_product_matrix(axis) + \
+           (1 - np.cos(angle)) * np.outer(axis, axis)
+
+    result = np.zeros((4, 4), np.float32)
+    result[:3, :3] = mat3
+    result[3, 3] = 1.0
+
+    return result
 
 def look_at(eye, center, up):
     z = normalized(eye - center)
@@ -55,12 +74,12 @@ def look_at(eye, center, up):
     y = np.cross(z, x)
 
     result = np.zeros((4, 4), np.float32)
-    result[:3, 0] = x
-    result[:3, 1] = y
-    result[:3, 2] = z
-    result[3, 0] = -x.dot(eye)
-    result[3, 1] = -y.dot(eye)
-    result[3, 2] = -z.dot(eye)
+    result[0, :3] = x
+    result[1, :3] = y
+    result[2, :3] = z
+    result[0, 3] = -x.dot(eye)
+    result[1, 3] = -y.dot(eye)
+    result[2, 3] = -z.dot(eye)
     result[3, 3] = 1.0
 
     return result
@@ -77,10 +96,7 @@ def perspective_projection(fovy, aspect, zNear, zFar, degree=False):
     result[0, 0] = 1.0 / (aspect * tanHalf)
     result[1, 1] = 1.0 / tanHalf
     result[2, 2] = -(zFar + zNear)/(zFar - zNear)
-    result[2, 3] = -1.0
-    result[3, 2] = -(2.0 * zFar * zNear) / (zFar - zNear)
+    result[3, 2] = -1.0
+    result[2, 3] = -(2.0 * zFar * zNear) / (zFar - zNear)
 
     return result
-
-
-print(look_at(np.array([0, 0, 1], np.float32), np.array([0, 2, 0], np.float32), np.array([0, 1, 0], np.float32)))

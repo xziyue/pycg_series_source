@@ -10,17 +10,16 @@ glfwKeyTranslator={
 }
 
 
-
 class FPSCamera:
 
     def __init__(self):
         self.keyboardVelocity = 0.1
-        self.mouseVelocity = 0.001
-        self.scrollVelocity = 0.01
+        self.mouseVelocity = 0.0012
+        self.scrollVelocity = 0.1
 
-        self.eyePos = np.array((0.0, 0.0, 5.0), np.float32)
+        self.eyePos = np.array((0.0, 0.0, 2.0), np.float32)
         self.pitch = 0.0
-        self.yaw = np.pi / 2.0
+        self.yaw = -np.pi / 2.0
         self.fov = np.deg2rad(80.0)
 
     def _get_spherical_coor(self, pitch, yaw):
@@ -28,10 +27,13 @@ class FPSCamera:
             (
                 np.cos(pitch) * np.cos(yaw),
                 np.sin(pitch),
-                -np.cos(pitch) * np.sin(yaw)
+                np.cos(pitch) * np.sin(yaw)
             )
             , np.float32
         )
+
+    def get_eye_pos(self):
+        return self.eyePos
 
     def get_projection_matrix(self, aspect, zNear, zFar):
         return perspective_projection(self.fov, aspect, zNear, zFar)
@@ -46,13 +48,13 @@ class FPSCamera:
         return self._get_spherical_coor(self.pitch, self.yaw)
 
     def _get_up_dir(self):
-        return self._get_spherical_coor(self.pitch + np.pi / 2.0, self.yaw)
+        return normalized(np.cross(self._get_right_dir(), self._get_front_dir()))
 
     def _get_right_dir(self):
-        return self._get_spherical_coor(self.pitch, self.yaw - np.pi / 2.0)
+        return normalized(np.cross(self._get_front_dir(), unit_y()))
 
     def set_pitch(self, val):
-        self.pitch = np.clip(val, -np.pi / 2.0, np.pi / 2.0)
+        self.pitch = np.clip(val, -np.deg2rad(89.0), np.deg2rad(89.0))
 
     def get_pitch(self):
         return self.pitch
@@ -81,9 +83,8 @@ class FPSCamera:
         else:
             print('invalid keypress: {}'.format(key))
 
-
     def respond_mouse_movement(self, xoffset, yoffset):
-        self.set_pitch(self.pitch + self.mouseVelocity * yoffset)
+        self.set_pitch(self.pitch - self.mouseVelocity * yoffset)
         self.set_yaw(self.yaw + self.mouseVelocity * xoffset)
 
     def respond_scroll(self, yoffset):

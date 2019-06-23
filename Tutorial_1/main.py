@@ -67,8 +67,14 @@ def debug_message_callback(source, msg_type, msg_id, severity, length, raw, user
     print('debug', source, msg_type, msg_id, severity, msg)
 
 
+windowResizeCallCount = 0
+# ignore the first call (because the first call is problematic on Ubuntu)
 def window_resize_callback(theWindow, width, height):
-    global windowSize
+    global windowResizeCallCount, windowSize
+    if windowResizeCallCount == 0:
+        windowResizeCallCount += 1
+        return
+
     windowSize = (width, height)
     glViewport(0, 0, width, height)
 
