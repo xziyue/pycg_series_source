@@ -130,3 +130,20 @@ class GLProgram:
         assert self.programId is not None
         glUseProgram(self.programId)
 
+
+
+# this class is created mainly for resource management
+class GLTexture2D:
+
+    def __init__(self):
+        self.textureId = glGenTextures(1)
+        assert self.textureId != 0
+
+    def __del__(self):
+        glDeleteTextures([self.textureId])
+
+    def bind(self):
+        glBindTexture(GL_TEXTURE_2D, self.textureId)
+
+    def unbind(self):
+        glBindTexture(GL_TEXTURE_2D, 0)
