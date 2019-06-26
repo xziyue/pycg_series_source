@@ -6,6 +6,10 @@ def get_numpy_float32_array_pointer(array):
     assert array.dtype == np.float32
     return array.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
+def get_numpy_unit8_array_pointer(array):
+    assert array.dtype == np.uint8
+    return array.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+
 class GLUniform:
 
     def __init__(self, programId, name, dtype):
@@ -140,7 +144,12 @@ class GLTexture2D:
         assert self.textureId != 0
 
     def __del__(self):
-        glDeleteTextures([self.textureId])
+        self.delete()
+
+    def delete(self):
+        if self.textureId != 0:
+            glDeleteTextures([self.textureId])
+        self.textureId = 0
 
     def bind(self):
         glBindTexture(GL_TEXTURE_2D, self.textureId)

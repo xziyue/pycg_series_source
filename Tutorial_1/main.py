@@ -90,7 +90,6 @@ if __name__ == '__main__':
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
     if platform.system().lower() == 'darwin':
-        # not sure if this is necessary, but is suggested by learnopengl
         glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
 
     # create window

@@ -100,3 +100,20 @@ def perspective_projection(fovy, aspect, zNear, zFar, degree=False):
     result[2, 3] = -(2.0 * zFar * zNear) / (zFar - zNear)
 
     return result
+
+
+def orthographic_projection(left, right, bottom, top, zNear, zFar):
+    assert abs(right - left) > _nonZeroEps
+    assert abs(top - bottom) > _nonZeroEps
+    assert abs(zNear - zFar) > _nonZeroEps
+
+    result = np.zeros((4, 4), np.float32)
+    result[0, 0] = 2.0 / (right - left)
+    result[1, 1] = 2.0 / (top - bottom)
+    result[2, 2] = -2.0 / (zFar - zNear)
+    result[3, 3] = 1.0
+    result[0, 3] = -(right + left) / (right - left)
+    result[1, 3] = -(top + bottom) / (top - bottom)
+    result[2, 3] = -(zFar + zNear) / (zFar - zNear)
+
+    return result
