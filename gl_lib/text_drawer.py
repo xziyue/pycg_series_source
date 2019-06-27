@@ -44,6 +44,46 @@ class CharacterSlot:
         self.advance = glyph.advance.x
 
 
+def _create_text_texture(bitmapArray):
+    height, width = bitmapArray.shape
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+    texture = GLTexture2D()
+    texture.bind()
+
+    # pass texture data
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RED,
+        width,
+        height,
+        0,
+        GL_RED,
+        GL_UNSIGNED_BYTE,
+        get_numpy_unit8_array_pointer(bitmapArray)
+    )
+
+    # set texture options
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+    texture.unbind()
+
+    return texture
+
+def _get_rendering_buffer(xpos, ypos, w, h):
+    return np.asarray([
+        xpos, ypos - h, 0.0, 1.0,
+        xpos, ypos, 0.0, 0.0,
+              xpos + w, ypos, 1.0, 0.0,
+        xpos, ypos - h, 0.0, 1.0,
+              xpos + w, ypos, 1.0, 0.0,
+              xpos + w, ypos - h, 1.0, 1.0
+    ], np.float32)
+
 class TextDrawer:
 
     def __init__(self):
@@ -59,7 +99,7 @@ class TextDrawer:
         self.textColorUniform = GLUniform(self.renderProgram.get_program_id(), 'textColor', 'vec3f')
 
         # create rendering buffer
-        self.vbo = VBO(self._get_rendering_buffer(0, 0, 0, 0))
+        self.vbo = VBO(_get_rendering_buffer(0, 0, 0, 0))
         self.vbo.create_buffers()
         self.vboId = glGenBuffers(1)
 
@@ -107,32 +147,10 @@ class TextDrawer:
             self.face.load_char(character)
             ftBitmap = self.face.glyph.bitmap
             height, width = ftBitmap.rows, ftBitmap.width
-            bitmap = np.array(ftBitmap.buffer, dtype=np.uint8)
+            bitmap = np.array(ftBitmap.buffer, dtype=np.uint8).reshape((height, width))
 
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-            texture = GLTexture2D()
-            texture.bind()
-
-            # pass texture data
-            glTexImage2D(
-                GL_TEXTURE_2D,
-                0,
-                GL_RED,
-                width,
-                height,
-                0,
-                GL_RED,
-                GL_UNSIGNED_BYTE,
-                get_numpy_unit8_array_pointer(bitmap)
-            )
-
-            # set texture options
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-
-            texture.unbind()
+            # create texture
+            texture = _create_text_texture(bitmap)
 
             # add texture object to the dictionary
             characterSlot = CharacterSlot(texture, self.face.glyph)
@@ -142,16 +160,6 @@ class TextDrawer:
         if ch not in self.textures:
             self.load_character(ch)
         return self.textures[ch]
-
-    def _get_rendering_buffer(self, xpos, ypos, w, h):
-        return np.asarray([
-                    xpos, ypos - h, 0.0, 1.0,
-                    xpos, ypos, 0.0, 0.0,
-                    xpos + w, ypos, 1.0, 0.0,
-                    xpos, ypos - h, 0.0, 1.0,
-                    xpos + w, ypos, 1.0, 0.0,
-                    xpos + w, ypos - h, 1.0, 1.0
-                ], np.float32)
 
     def _draw_text(self, text, textPos, windowSize, scale, linespread, foreColor):
         if len(text) == 0:
@@ -206,7 +214,7 @@ class TextDrawer:
 
                     charSlot.texture.bind()
                     self.vbo.bind()
-                    self.vbo.set_array(self._get_rendering_buffer(xpos, ypos, w, h))
+                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h))
                     self.vbo.copy_data()
                     self.vbo.unbind()
 
@@ -252,7 +260,7 @@ class TextDrawer_Outlined:
         self.textColorUniform = GLUniform(self.renderProgram.get_program_id(), 'textColor', 'vec3f')
 
         # create rendering buffer
-        self.vbo = VBO(self._get_rendering_buffer(0, 0, 0, 0))
+        self.vbo = VBO(_get_rendering_buffer(0, 0, 0, 0))
         self.vbo.create_buffers()
         self.vboId = glGenBuffers(1)
 
@@ -301,64 +309,43 @@ class TextDrawer_Outlined:
         assert self.face is not None
         assert len(character) == 1
 
-        if character not in self.textures:
-            # load glyph in freetype
-            self.face.load_char(character)
+        if character not in self.foreTextures:
+            # load background glyph
+            self.face.load_char(character, ft.FT_LOAD_FLAGS['FT_LOAD_DEFAULT'])
+            backGlyph = ft.FT_Glyph()
+            ft.FT_Get_Glyph(self.face.glyph._FT_GlyphSlot, ft.byref(backGlyph))
+            backGlyph = ft.Glyph(backGlyph)
+            error = ft.FT_Glyph_StrokeBorder(ft.byref(backGlyph._FT_Glyph), self.stroker._FT_Stroker, False, False)
+            if error:
+                raise ft.FT_Exception(error)
+            backBitmapGlyph = backGlyph.to_bitmap(ft.FT_RENDER_MODES['FT_RENDER_MODE_NORMAL'], 0)
 
+            backBitmap = backBitmapGlyph.bitmap
+            backHeight, backWidth = backBitmap.rows, backBitmap.width
+            backBitmap = np.array(backBitmap.buffer, dtype=np.uint8).reshape((backHeight, backWidth))
 
-            ftBitmap = self.face.glyph.bitmap
-            height, width = ftBitmap.rows, ftBitmap.width
-            bitmap = np.array(ftBitmap.buffer, dtype=np.uint8)
+            backTexture = _create_text_texture(backBitmap)
 
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
-            texture = GLTexture2D()
-            texture.bind()
+            backSlot = CharacterSlot(backTexture, backBitmapGlyph)
+            self.backTextures[character] = backSlot
 
-            # pass texture data
-            glTexImage2D(
-                GL_TEXTURE_2D,
-                0,
-                GL_RED,
-                width,
-                height,
-                0,
-                GL_RED,
-                GL_UNSIGNED_BYTE,
-                get_numpy_unit8_array_pointer(bitmap)
-            )
+            # load foreground glyph
+            self.face.load_char(character, ft.FT_LOAD_FLAGS['FT_LOAD_RENDER'])
+            foreBitmap = self.face.glyph.bitmap
+            foreHeight, foreWidth = backBitmap.rows, backBitmap.width
+            foreBitmap = np.array(backBitmap.buffer, dtype=np.uint8).reshape((foreHeight, foreWidth))
 
-            # set texture options
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+            foreTexture = _create_text_texture(foreBitmap)
 
-            texture.unbind()
-
-            # add texture object to the dictionary
-            characterSlot = CharacterSlot()
-            characterSlot.texture = texture
-            characterSlot.textureSize = (width, height)
-            characterSlot.bearing = (self.face.glyph.bitmap_left, self.face.glyph.bitmap_top)
-            characterSlot.advance = self.face.glyph.advance.x
-            self.textures[character] = characterSlot
+            foreSlot = CharacterSlot(foreTexture, self.face.glyph)
+            self.foreTextures[character] = foreSlot
 
     def get_character(self, ch):
-        if ch not in self.textures:
+        if ch not in self.foreTextures:
             self.load_character(ch)
-        return self.textures[ch]
+        return (self.foreTextures[ch], self.backTextures[ch])
 
-    def _get_rendering_buffer(self, xpos, ypos, w, h):
-        return np.asarray([
-                    xpos, ypos - h, 0.0, 1.0,
-                    xpos, ypos, 0.0, 0.0,
-                    xpos + w, ypos, 1.0, 0.0,
-                    xpos, ypos - h, 0.0, 1.0,
-                    xpos + w, ypos, 1.0, 0.0,
-                    xpos + w, ypos - h, 1.0, 1.0
-                ], np.float32)
-
-    def _draw_text(self, text, textPos, windowSize, scale, linespread, foreColor):
+    def _draw_text(self, text, textPos, windowSize, scale, linespread, foreColor, backColor):
         if len(text) == 0:
             return
 
@@ -411,7 +398,7 @@ class TextDrawer_Outlined:
 
                     charSlot.texture.bind()
                     self.vbo.bind()
-                    self.vbo.set_array(self._get_rendering_buffer(xpos, ypos, w, h))
+                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h))
                     self.vbo.copy_data()
                     self.vbo.unbind()
 
@@ -431,11 +418,10 @@ class TextDrawer_Outlined:
 
             lineY -= yOffset
 
-
         glBindVertexArray(0)
 
         if not blendEnabled:
             glDisable(GL_BLEND)
 
-    def draw_text(self, text, textPos, windowSize, color=(1.0, 1.0, 1.0), scale=1.0, linespread=-0.8):
-        return self._draw_text(text, textPos, windowSize, scale, linespread, color)
+    def draw_text(self, text, textPos, windowSize, foreColor=(1.0, 1.0, 1.0), backColor=(0.0, 0.0, 0.0), scale=1.0, linespread=-0.8):
+        return self._draw_text(text, textPos, windowSize, scale, linespread, foreColor, backColor)
