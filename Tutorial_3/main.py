@@ -18,7 +18,7 @@ from gl_lib.gl_screenshot import save_screenshot_rgb
 from gl_lib.text_drawer import TextDrawer
 
 windowSize = (800, 600)
-windowBackgroundColor = (0.0, 0.0, 0.0, 1.0)
+windowBackgroundColor = (0.6, 0.6, 0.6, 1.0)
 
 camera = FPSCamera()
 
@@ -114,7 +114,7 @@ if __name__ == '__main__':
 
     glfw.set_key_callback(theWindow, window_keypress_callback)
     # disable cursor
-    glfw.set_input_mode(theWindow, glfw.CURSOR, glfw.CURSOR_DISABLED)
+    #glfw.set_input_mode(theWindow, glfw.CURSOR, glfw.CURSOR_DISABLED)
 
     glfw.set_cursor_pos_callback(theWindow, window_cursor_callback)
     # initialize cursor position
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     glfw.set_scroll_callback(theWindow, window_scroll_callback)
 
     textDrawer = TextDrawer()
-    textDrawer.load_font('../misc/STIX2Text-Regular.otf', 48 * 64)
+    textDrawer.load_font('../misc/STIX2Text-Regular.otf', 50 * 64)
     resObjs.append(textDrawer)
 
     # change drawing mode
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         glClearColor(*windowBackgroundColor)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        textDrawer.draw_text('abc', (300, 300), windowSize)
+        textDrawer.draw_text('this is sample text', (0, windowSize[1]), windowSize, scale=0.6)
 
         # respond key press
         keyboard_respond_func()
