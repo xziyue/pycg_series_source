@@ -323,6 +323,7 @@ class TextDrawer_Outlined:
 
         if character not in self.foreTextures:
             # load background glyph
+            # the render option will lead to an outline glyph (not rendered)
             self.face.load_char(character, ft.FT_LOAD_FLAGS['FT_LOAD_DEFAULT'])
             backGlyph = ft.FT_Glyph()
             ft.FT_Get_Glyph(self.face.glyph._FT_GlyphSlot, ft.byref(backGlyph))
@@ -331,6 +332,8 @@ class TextDrawer_Outlined:
             error = ft.FT_Glyph_StrokeBorder(ft.byref(backGlyph._FT_Glyph), self.stroker._FT_Stroker, False, False)
             if error:
                 raise ft.FT_Exception(error)
+
+            # the render option will lead to a rendered glyph
             backBitmapGlyph = backGlyph.to_bitmap(ft.FT_RENDER_MODES['FT_RENDER_MODE_NORMAL'], 0)
 
             backBitmap = backBitmapGlyph.bitmap
