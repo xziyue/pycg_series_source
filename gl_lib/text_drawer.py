@@ -5,43 +5,53 @@ from gl_lib.utility import *
 from gl_lib.transmat import orthographic_projection
 import ctypes
 import os
+import operator
 
-textRenderVertexShaderSource = r'''
+
+_textVertexShaderSource = r'''
 #version 330 core
-layout (location = 0) in vec4 aVec;
+layout (location = 0) in vec3 aVec;
+layout (location = 1) in vec2 aTexPos;
 out vec2 bTexPos;
 
 uniform mat4 projection;
 
-void main()
-{
-    gl_Position = projection * vec4(aVec.xy, 0.0, 1.0);
-    bTexPos = aVec.zw;
+void main(){
+    gl_Position = projection * vec4(aVec, 1.0);
+    bTexPos = aTexPos;
 }  
 '''
 
-textRenderFragmentShaderSource = r'''
+_textFragmentShaderSource = r'''
 #version 330 core
 in vec2 bTexPos;
 out vec4 color;
 
 uniform vec3 textColor;
 uniform sampler2D textureSample;
+uniform vec2 textureSize;
 
-void main()
-{
+void main(){
     vec4 sampled = vec4(1.0, 1.0, 1.0, texture(textureSample, bTexPos).r);
     color = vec4(textColor, 1.0) * sampled;
 }  
 '''
 
 
+
 class CharacterSlot:
     def __init__(self, texture, glyph):
         self.texture = texture
         self.textureSize = (glyph.bitmap.width, glyph.bitmap.rows)
-        self.bearing = (glyph.bitmap_left, glyph.bitmap_top)
-        self.advance = glyph.advance.x
+
+        if isinstance(glyph, ft.GlyphSlot):
+            self.bearing = (glyph.bitmap_left, glyph.bitmap_top)
+            self.advance = glyph.advance.x
+        elif isinstance(glyph, ft.BitmapGlyph):
+            self.bearing = (glyph.left, glyph.top)
+            self.advance = None
+        else:
+            raise RuntimeError('unknown glyph type')
 
 
 def _create_text_texture(bitmapArray):
@@ -67,22 +77,24 @@ def _create_text_texture(bitmapArray):
     # set texture options
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
     texture.unbind()
 
     return texture
 
-def _get_rendering_buffer(xpos, ypos, w, h):
+
+def _get_rendering_buffer(xpos, ypos, w, h, zfix=0.0):
     return np.asarray([
-        xpos, ypos - h, 0.0, 1.0,
-        xpos, ypos, 0.0, 0.0,
-              xpos + w, ypos, 1.0, 0.0,
-        xpos, ypos - h, 0.0, 1.0,
-              xpos + w, ypos, 1.0, 0.0,
-              xpos + w, ypos - h, 1.0, 1.0
+        xpos, ypos - h, zfix, 0.0, 1.0,
+        xpos, ypos, zfix, 0.0, 0.0,
+        xpos + w, ypos, zfix, 1.0, 0.0,
+        xpos, ypos - h, zfix, 0.0, 1.0,
+        xpos + w, ypos, zfix, 1.0, 0.0,
+        xpos + w, ypos - h, zfix, 1.0, 1.0
     ], np.float32)
+
 
 class TextDrawer:
 
@@ -91,12 +103,13 @@ class TextDrawer:
         self.textures = dict()
 
         # compile rendering program
-        self.renderProgram = GLProgram(textRenderVertexShaderSource, textRenderFragmentShaderSource)
+        self.renderProgram = GLProgram(_textVertexShaderSource, _textFragmentShaderSource)
         self.renderProgram.compile_and_link()
 
         # make projection uniform
         self.projectionUniform = GLUniform(self.renderProgram.get_program_id(), 'projection', 'mat4f')
         self.textColorUniform = GLUniform(self.renderProgram.get_program_id(), 'textColor', 'vec3f')
+        self.textureSizeUniform = GLUniform(self.renderProgram.get_program_id(), 'textureSize', 'vec2f')
 
         # create rendering buffer
         self.vbo = VBO(_get_rendering_buffer(0, 0, 0, 0))
@@ -109,9 +122,11 @@ class TextDrawer:
         glBindBuffer(GL_ARRAY_BUFFER, self.vboId)
         self.vbo.bind()
         self.vbo.copy_data()
-
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float),
+                              ctypes.c_void_p(3 * ctypes.sizeof(ctypes.c_float)))
+        glEnableVertexAttribArray(1)
         # self.vbo.unbind()
         glBindVertexArray(0)
 
@@ -124,6 +139,7 @@ class TextDrawer:
         self.renderProgram.delete()
         self.projectionUniform = None
         self.textColorUniform = None
+        self.textureSizeUniform = None
         self.vbo.delete()
         glDeleteVertexArrays(1, [self.vao])
 
@@ -187,34 +203,29 @@ class TextDrawer:
 
         for line in lines:
 
-            maxBottom = None
-
             if len(line) > 0:
                 # analyze this line
                 bearings = []
                 for ch in line:
                     charSlot = self.get_character(ch)
-                    bearings.append(charSlot.bearing[1] * scale)
+                    bearings.append(charSlot.bearing[1] * scale[1])
 
                 maxBearings = max(bearings)
 
                 for ch in line:
                     charSlot = self.get_character(ch)
 
-                    xpos = nowX + charSlot.bearing[0] * scale
-                    yLowerd = (maxBearings - charSlot.bearing[1] * scale)
+                    xpos = nowX + charSlot.bearing[0] * scale[0]
+                    yLowerd = (maxBearings - charSlot.bearing[1] * scale[1])
                     ypos = lineY - yLowerd
 
-                    if maxBottom is None:
-                        maxBottom = 0.0
-                    maxBottom = max(maxBottom, yLowerd + charSlot.textureSize[1])
+                    w = charSlot.textureSize[0] * scale[0]
+                    h = charSlot.textureSize[1] * scale[1]
 
-                    w = charSlot.textureSize[0] * scale
-                    h = charSlot.textureSize[1] * scale
-
+                    self.textureSizeUniform.update(np.array((w, h), np.float32))
                     charSlot.texture.bind()
                     self.vbo.bind()
-                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h))
+                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h, 0.999))
                     self.vbo.copy_data()
                     self.vbo.unbind()
 
@@ -222,16 +233,11 @@ class TextDrawer:
                     charSlot.texture.unbind()
 
                     # the advance is number of 1/64 pixels
-                    nowX += (charSlot.advance / 64.0) * scale
+                    nowX += (charSlot.advance / 64.0) * scale[0]
 
             nowX = textPos[0]
 
-            if maxBottom is None:
-                # using default line spread in this case
-                yOffset = self.get_character('X').textureSize[1] * scale
-            else:
-                yOffset = maxBottom + self.get_character('x').textureSize[1] * scale * linespread
-
+            yOffset = self.get_character('X').textureSize[1] * scale[1] * linespread
             lineY -= yOffset
 
         glBindVertexArray(0)
@@ -239,7 +245,7 @@ class TextDrawer:
         if not blendEnabled:
             glDisable(GL_BLEND)
 
-    def draw_text(self, text, textPos, windowSize, color=(1.0, 1.0, 1.0), scale=1.0, linespread=-0.8):
+    def draw_text(self, text, textPos, windowSize, color=(1.0, 1.0, 1.0), scale=(1.0, 1.0), linespread=1.5):
         return self._draw_text(text, textPos, windowSize, scale, linespread, color)
 
 
@@ -248,16 +254,17 @@ class TextDrawer_Outlined:
     def __init__(self):
         self.face = None
         self.stroker = None
-        self.foreTextures = []
-        self.backTextures = []
+        self.foreTextures = dict()
+        self.backTextures = dict()
 
         # compile rendering program
-        self.renderProgram = GLProgram(textRenderVertexShaderSource, textRenderFragmentShaderSource)
+        self.renderProgram = GLProgram(_textVertexShaderSource, _textFragmentShaderSource)
         self.renderProgram.compile_and_link()
 
         # make projection uniform
         self.projectionUniform = GLUniform(self.renderProgram.get_program_id(), 'projection', 'mat4f')
         self.textColorUniform = GLUniform(self.renderProgram.get_program_id(), 'textColor', 'vec3f')
+        self.textureSizeUniform = GLUniform(self.renderProgram.get_program_id(), 'textureSize', 'vec2f')
 
         # create rendering buffer
         self.vbo = VBO(_get_rendering_buffer(0, 0, 0, 0))
@@ -270,9 +277,11 @@ class TextDrawer_Outlined:
         glBindBuffer(GL_ARRAY_BUFFER, self.vboId)
         self.vbo.bind()
         self.vbo.copy_data()
-
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float),
+                              ctypes.c_void_p(3 * ctypes.sizeof(ctypes.c_float)))
+        glEnableVertexAttribArray(1)
         # self.vbo.unbind()
         glBindVertexArray(0)
 
@@ -287,16 +296,19 @@ class TextDrawer_Outlined:
         self.renderProgram.delete()
         self.projectionUniform = None
         self.textColorUniform = None
+        self.textureSizeUniform = None
         self.vbo.delete()
         glDeleteVertexArrays(1, [self.vao])
 
-    def load_font(self, fontFilename, fontSize, outlineSize):
+    def load_font(self, fontFilename, fontSize, outlineSize=2 * 64):
         assert os.path.exists(fontFilename)
         self.foreTextures.clear()
         self.backTextures.clear()
 
         self.face = ft.Face(fontFilename)
         self.face.set_char_size(fontSize)
+
+        self.outlineSize = outlineSize
         self.stroker = ft.Stroker()
         self.stroker.set(outlineSize, ft.FT_STROKER_LINECAPS['FT_STROKER_LINECAP_ROUND'],
                          ft.FT_STROKER_LINEJOINS['FT_STROKER_LINEJOIN_ROUND'], 0)
@@ -315,6 +327,7 @@ class TextDrawer_Outlined:
             backGlyph = ft.FT_Glyph()
             ft.FT_Get_Glyph(self.face.glyph._FT_GlyphSlot, ft.byref(backGlyph))
             backGlyph = ft.Glyph(backGlyph)
+            # add border to the glyph
             error = ft.FT_Glyph_StrokeBorder(ft.byref(backGlyph._FT_Glyph), self.stroker._FT_Stroker, False, False)
             if error:
                 raise ft.FT_Exception(error)
@@ -332,8 +345,8 @@ class TextDrawer_Outlined:
             # load foreground glyph
             self.face.load_char(character, ft.FT_LOAD_FLAGS['FT_LOAD_RENDER'])
             foreBitmap = self.face.glyph.bitmap
-            foreHeight, foreWidth = backBitmap.rows, backBitmap.width
-            foreBitmap = np.array(backBitmap.buffer, dtype=np.uint8).reshape((foreHeight, foreWidth))
+            foreHeight, foreWidth = foreBitmap.rows, foreBitmap.width
+            foreBitmap = np.array(foreBitmap.buffer, dtype=np.uint8).reshape((foreHeight, foreWidth))
 
             foreTexture = _create_text_texture(foreBitmap)
 
@@ -358,7 +371,7 @@ class TextDrawer_Outlined:
         glActiveTexture(GL_TEXTURE0)
 
         foreColor = np.asarray(foreColor, np.float32)
-        self.textColorUniform.update(foreColor)
+        backColor = np.asarray(backColor, np.float32)
 
         projectionMat = orthographic_projection(0.0, windowSize[0], 0.0, windowSize[1], self.zNear, self.zFar)
         self.projectionUniform.update(projectionMat)
@@ -371,51 +384,61 @@ class TextDrawer_Outlined:
 
         for line in lines:
 
-            maxBottom = None
-
             if len(line) > 0:
                 # analyze this line
                 bearings = []
                 for ch in line:
-                    charSlot = self.get_character(ch)
-                    bearings.append(charSlot.bearing[1] * scale)
+                    _, backSlot = self.get_character(ch)
+                    bearings.append(backSlot.bearing)
 
-                maxBearings = max(bearings)
+                minBearings_X = min(zip(*bearings), key=operator.itemgetter(0))[0] * scale[0]
+                maxBearings_Y = max(zip(*bearings), key=operator.itemgetter(1))[1] * scale[1]
+                nowX = -minBearings_X
 
                 for ch in line:
-                    charSlot = self.get_character(ch)
+                    foreSlot, backSlot = self.get_character(ch)
 
-                    xpos = nowX + charSlot.bearing[0] * scale
-                    yLowerd = (maxBearings - charSlot.bearing[1] * scale)
+                    # draw the background
+                    xpos = nowX + backSlot.bearing[0] * scale[0]
+                    yLowerd = (maxBearings_Y - backSlot.bearing[1] * scale[1])
                     ypos = lineY - yLowerd
 
-                    if maxBottom is None:
-                        maxBottom = 0.0
-                    maxBottom = max(maxBottom, yLowerd + charSlot.textureSize[1])
+                    w = backSlot.textureSize[0] * scale[0]
+                    h = backSlot.textureSize[1] * scale[1]
 
-                    w = charSlot.textureSize[0] * scale
-                    h = charSlot.textureSize[1] * scale
-
-                    charSlot.texture.bind()
+                    self.textureSizeUniform.update(np.array((w, h), np.float32))
+                    backSlot.texture.bind()
+                    self.textColorUniform.update(backColor)
                     self.vbo.bind()
-                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h))
+                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h, 0.99))
                     self.vbo.copy_data()
                     self.vbo.unbind()
-
                     glDrawArrays(GL_TRIANGLES, 0, 6)
-                    charSlot.texture.unbind()
+                    backSlot.texture.unbind()
+
+                    # draw the foreground
+                    xpos = nowX + foreSlot.bearing[0] * scale[0]
+                    yLowerd = (maxBearings_Y - foreSlot.bearing[1] * scale[1])
+                    ypos = lineY - yLowerd
+
+                    w = foreSlot.textureSize[0] * scale[0]
+                    h = foreSlot.textureSize[1] * scale[1]
+
+                    foreSlot.texture.bind()
+                    self.textColorUniform.update(foreColor)
+                    self.vbo.bind()
+                    # the foreground is set closer to the screen so that it
+                    # is rendered above the background
+                    self.vbo.set_array(_get_rendering_buffer(xpos, ypos, w, h, 0.999))
+                    self.vbo.copy_data()
+                    self.vbo.unbind()
+                    glDrawArrays(GL_TRIANGLES, 0, 6)
+                    foreSlot.texture.unbind()
 
                     # the advance is number of 1/64 pixels
-                    nowX += (charSlot.advance / 64.0) * scale
+                    nowX += ((foreSlot.advance + 2.0 * self.outlineSize) / 64.0) * scale[0]
 
-            nowX = textPos[0]
-
-            if maxBottom is None:
-                # using default line spread in this case
-                yOffset = self.get_character('X').textureSize[1] * scale
-            else:
-                yOffset = maxBottom + self.get_character('x').textureSize[1] * scale * linespread
-
+            yOffset = self.get_character('X')[1].textureSize[1] * scale[1] * linespread
             lineY -= yOffset
 
         glBindVertexArray(0)
@@ -423,5 +446,6 @@ class TextDrawer_Outlined:
         if not blendEnabled:
             glDisable(GL_BLEND)
 
-    def draw_text(self, text, textPos, windowSize, foreColor=(1.0, 1.0, 1.0), backColor=(0.0, 0.0, 0.0), scale=1.0, linespread=-0.8):
+    def draw_text(self, text, textPos, windowSize, foreColor=(1.0, 1.0, 1.0), backColor=(0.0, 0.0, 0.0), scale=(1.0, 1.0),
+                  linespread=1.5):
         return self._draw_text(text, textPos, windowSize, scale, linespread, foreColor, backColor)
