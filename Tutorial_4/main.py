@@ -8,6 +8,7 @@ from datetime import datetime
 
 # add last folder into PYTHONPATH
 import sys, os
+
 lastFolder = os.path.split(os.getcwd())[0]
 sys.path.append(lastFolder)
 
@@ -17,60 +18,51 @@ from gl_lib.fps_camera import *
 from gl_lib.gl_screenshot import save_screenshot_rgb
 import gl_lib.text_drawer
 from gl_lib.text_drawer import TextDrawer, TextDrawer_Outlined
-from Tutorial_3.shader import *
+from Tutorial_4.shader import *
 
 # import Pillow for loading images
 from PIL import Image
 
-windowSize = (800, 600)
+windowSize = np.asarray((800, 600), np.int)
 windowBackgroundColor = (0.6, 0.6, 0.6, 1.0)
 textBackgroundColor = (0.2, 0.6, 0.8)
+textForegroundColor = (1.0, 1.0, 1.0)
+ambientColor = np.asarray((0.2, 0.2, 0.2), np.float32)
+backColor = np.asarray((0.4, 0.4, 0.4), np.float32)
+focalLength = 2.0
+cameraWidth = 0.7
 zNear = 0.1
 zFar = 100.0
-useBicubic = False
-
-# lighting configurations
-lightColor = np.asarray([1.0, 1.0, 1.0], np.float32)
-frameColor = np.asarray([0.4, 0.4, 1.0], np.float32)
-ambientCoef = 0.1
-specularCoef = 0.6
-specularP = 64
-
-vertices = np.asarray(
-    [
-        -0.5, 0.5, 0.0,
-        -0.5, -0.5, 0.0,
-        0.5, 0.5, 0.0,
-        0.5, 0.5, 0.0,
-        0.5, -0.5, 0.0,
-        -0.5, -0.5, 0.0
-    ],
-    np.float32
-)
-
-textureVertices = np.asarray(
-    [
-        -0.5, 0.5, 0.0, 0.0, 0.0,
-        -0.5, -0.5, 0.0, 0.0, 1.0,
-        0.5, 0.5, 0.0, 1.0, 0.0,
-        0.5, 0.5, 0.0, 1.0, 0.0,
-        0.5, -0.5, 0.0, 1.0, 1.0,
-        -0.5, -0.5, 0.0, 0.0, 1.0
-    ],
-    np.float32
-)
 
 camera = FPSCamera()
+camera.eyePos[2] = 5.0
+projector = FPSCamera()
+projector.eyePos[2] = 4.0
+controlId = 0
+controlObjs = [camera, projector]
+controlTexts = ['camera', 'projector']
+
+vertices = np.asarray([
+    -1.0, -1.0, 0.0,
+    -1.0, 1.0, 0.0,
+    1.0, 1.0, 0.0,
+    -1.0, -1.0, 0.0,
+    1.0, -1.0, 0.0,
+    1.0, 1.0, 0.0
+], np.float32)
+
 
 def debug_message_callback(source, msg_type, msg_id, severity, length, raw, user):
     msg = raw[0:length]
     print('debug', source, msg_type, msg_id, severity, msg)
 
+
 # stores which keys are pressed and handle key press in the main loop
 keyArray = np.array([False] * 300, np.bool)
 
+
 def window_keypress_callback(theWindow, key, scanCode, action, mods):
-    global useBicubic
+    global useBicubic, controlId
 
     if key == glfw.KEY_UNKNOWN:
         return
@@ -86,7 +78,7 @@ def window_keypress_callback(theWindow, key, scanCode, action, mods):
             screenshotFmt = 'screenshot_{}.png'
             save_screenshot_rgb(screenshotFmt.format(timeString), windowSize)
         elif key == glfw.KEY_O:
-            useBicubic = not useBicubic
+            controlId = (controlId + 1) % len(controlObjs)
         else:
             keyArray[key] = True
     elif action == glfw.RELEASE:
@@ -99,7 +91,7 @@ def keyboard_respond_func():
     keyPressed = np.where(keyArray == True)
     for key in keyPressed[0]:
         if key in glfwKeyTranslator:
-            camera.respond_keypress(glfwKeyTranslator[key])
+            controlObjs[controlId].respond_keypress(glfwKeyTranslator[key])
 
 
 def window_resize_callback(theWindow, width, height):
@@ -112,11 +104,13 @@ def window_cursor_callback(theWindow, xPos, yPos):
     global cursorPos
     xOffset = xPos - cursorPos[0]
     yOffset = yPos - cursorPos[1]
-    camera.respond_mouse_movement(xOffset, yOffset)
+    controlObjs[controlId].respond_mouse_movement(xOffset, yOffset)
     cursorPos = (xPos, yPos)
+
 
 def window_scroll_callback(theWindow, xOffset, yOffset):
     camera.respond_scroll(yOffset)
+
 
 def create_uniform(programId, infos):
     result = dict()
@@ -125,8 +119,22 @@ def create_uniform(programId, infos):
         result[name] = uniform
     return result
 
+
+def get_camera_vectors(cam):
+    height = cameraWidth / (windowSize[0] / windowSize[1])
+    eyePos = cam.get_eye_pos()
+    front = cam._get_front_dir()
+    base = eyePos + focalLength * front - 0.5 * cameraWidth * cam._get_right_dir() \
+           - 0.5 * height * cam._get_up_dir()
+    x = cameraWidth * cam._get_right_dir()
+    y = height * cam._get_up_dir()
+
+    return eyePos, base, x, y
+
+get_camera_vectors(camera)
+
 # resource-taking objects
-resObjs= []
+resObjs = []
 
 if __name__ == '__main__':
 
@@ -142,7 +150,7 @@ if __name__ == '__main__':
         glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
 
     # create window
-    theWindow = glfw.create_window(windowSize[0], windowSize[1], 'Texture & Text', None, None)
+    theWindow = glfw.create_window(windowSize[0], windowSize[1], 'Spherical Projection', None, None)
     # make window the current context
     glfw.make_context_current(theWindow)
 
@@ -167,60 +175,34 @@ if __name__ == '__main__':
 
     glfw.set_scroll_callback(theWindow, window_scroll_callback)
 
-    vertexVBO = VBO(vertices, usage='GL_STATIC_DRAW')
-    vertexVBO.create_buffers()
-    textureVBO = VBO(textureVertices, usage = 'GL_STATIC_DRAW')
-    textureVBO.create_buffers()
+    vbo = VBO(vertices, 'GL_STATIC_DRAW')
+    vbo.create_buffers()
 
-    frameVAO = glGenVertexArrays(1)
-    glBindVertexArray(frameVAO)
-    vertexVBO.bind()
-    vertexVBO.copy_data()
+    vao = glGenVertexArrays(1)
+    glBindVertexArray(vao)
+    vbo.bind()
+    vbo.copy_data()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
     glEnableVertexAttribArray(0)
     glBindVertexArray(0)
 
-    textureVAO = glGenVertexArrays(1)
-    glBindVertexArray(textureVAO)
-    textureVBO.bind()
-    textureVBO.copy_data()
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float), ctypes.c_void_p(0))
-    glEnableVertexAttribArray(0)
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * ctypes.sizeof(ctypes.c_float),
-                          ctypes.c_void_p(3 * ctypes.sizeof(ctypes.c_float)))
-    glEnableVertexAttribArray(1)
-    glBindVertexArray(0)
-
-    # create programs and uniforms
-    frameRenderProgram = GLProgram(frameVertexShaderSource, frameFragmentShaderSource)
-    frameRenderProgram.compile_and_link()
-    frameUniformInfos = [
-        ('model', 'mat4f'),
-        ('view', 'mat4f'),
-        ('projection', 'mat4f'),
-        ('objectColor', 'vec3f'),
-        ('lightColor', 'vec3f'),
-        ('viewPos', 'vec3f'),
-        ('lightPos', 'vec3f'),
-        ('ambientCoef', 'float'),
-        ('specularCoef', 'float'),
-        ('specularP', 'int')
+    # compile program
+    renderProgram = GLProgram(rayTracingVertexShaderSource, rayTracingFragmentShaderSource)
+    renderProgram.compile_and_link()
+    uniformInfos = [
+        ('backColor', 'vec3f'),
+        ('ambientColor', 'vec3f'),
+        ('o_c', 'vec3f'),
+        ('o_p', 'vec3f'),
+        ('x_c', 'vec3f'),
+        ('y_c', 'vec3f'),
+        ('x_p', 'vec3f'),
+        ('y_p', 'vec3f'),
+        ('c_c', 'vec3f'),
+        ('c_p', 'vec3f'),
+        ('winSize', 'vec2f')
     ]
-    frameRenderUniforms = create_uniform(frameRenderProgram.get_program_id(), frameUniformInfos)
-
-    textureRenderProgram = GLProgram(textureVertexShaderSource, textureFragmentShaderSource)
-    textureRenderProgram.compile_and_link()
-    textureUniformInfos = [
-        ('model', 'mat4f'),
-        ('view', 'mat4f'),
-        ('projection', 'mat4f'),
-        ('textureSize', 'vec2f')
-    ]
-    textureRenderUniforms = create_uniform(textureRenderProgram.get_program_id(), textureUniformInfos)
-
-    textureBicubicRenderProgram = GLProgram(textureVertexShaderSource, textureBicubicFragmentShaderSource)
-    textureBicubicRenderProgram.compile_and_link()
-    textureBicubicRenderUniforms = create_uniform(textureBicubicRenderProgram.get_program_id(), textureUniformInfos)
+    uniforms = create_uniform(renderProgram.get_program_id(), uniformInfos)
 
     # create texture
     image = np.asarray(Image.open('../misc/orphea.png'), np.uint8)
@@ -254,11 +236,12 @@ if __name__ == '__main__':
     resObjs.append(texture)
 
     textDrawer = TextDrawer_Outlined()
-    textDrawer.load_font('../misc/STIX2Text-Regular.otf', 30 * 64, 1 * 64)
+    textDrawer.load_font('../misc/STIX2Text-Regular.otf', 20 * 64, 1 * 64)
     resObjs.append(textDrawer)
 
     # change drawing mode
     # glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+    np.set_printoptions(precision=2)
 
     # keep rendering until the window should be closed
     while not glfw.window_should_close(theWindow):
@@ -266,50 +249,36 @@ if __name__ == '__main__':
         glClearColor(*windowBackgroundColor)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        # render the frame
-        frameRenderProgram.use()
-        aspect = windowSize[0] / windowSize[1]
-        frameRenderUniforms['projection'].update(camera.get_projection_matrix(aspect, zNear, zFar))
-        frameRenderUniforms['view'].update(camera.get_view_matrix())
-        frameRenderUniforms['model'].update(scale(1.0 / imageAspect, 1.0, 1.0))
-        frameRenderUniforms['objectColor'].update(frameColor)
-        frameRenderUniforms['lightColor'].update(lightColor)
-        frameRenderUniforms['viewPos'].update(camera.get_eye_pos())
-        frameRenderUniforms['lightPos'].update(camera.get_eye_pos())
-        frameRenderUniforms['ambientCoef'].update(ambientCoef)
-        frameRenderUniforms['specularCoef'].update(specularCoef)
-        frameRenderUniforms['specularP'].update(specularP)
+        renderProgram.use()
 
-        glBindVertexArray(frameVAO)
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-        glBindVertexArray(0)
+        # update uniforms
+        o_c, c_c, x_c, y_c = get_camera_vectors(camera)
+        o_p, c_p, x_p, y_p = get_camera_vectors(projector)
+        uniforms['o_c'].update(o_c)
+        uniforms['x_c'].update(x_c)
+        uniforms['y_c'].update(y_c)
+        uniforms['c_c'].update(c_c)
 
-        if useBicubic:
-            textureProgram = textureBicubicRenderProgram
-            textureUniforms = textureBicubicRenderUniforms
-        else:
-            textureProgram = textureRenderProgram
-            textureUniforms = textureRenderUniforms
+        uniforms['o_p'].update(o_p)
+        uniforms['x_p'].update(x_p)
+        uniforms['y_p'].update(y_p)
+        uniforms['c_p'].update(c_p)
+        uniforms['backColor'].update(backColor)
+        uniforms['ambientColor'].update(ambientColor)
+        uniforms['winSize'].update(windowSize.astype(np.float32))
 
-        # render the texture
-        textureProgram.use()
+        glBindVertexArray(vao)
         glActiveTexture(GL_TEXTURE0)
         texture.bind()
-        textureUniforms['projection'].update(camera.get_projection_matrix(aspect, zNear, zFar))
-        textureUniforms['view'].update(camera.get_view_matrix())
-
-        # modify its model matrix so that it is above the frame a little bit and smaller than the frame
-        textureUniforms['model'].update(
-            scale(0.95, 0.95, 1.0) @ translate(0.0, 0.0, 0.01) @ scale(1.0 / imageAspect, 1.0, 1.0)
-        )
-        textureUniforms['textureSize'].update(imageSize)
-
-        glBindVertexArray(textureVAO)
         glDrawArrays(GL_TRIANGLES, 0, 6)
+        texture.unbind()
         glBindVertexArray(0)
 
-
-        textDrawer.draw_text('sample text\nheroes\nOrphea', (5, windowSize[1] - 5), windowSize, scale=(1.0, 1.0),
+        textDrawer.draw_text('control: {}\ncamPos: {}\nprojPos: {}'.format(
+            controlTexts[controlId],
+            camera.get_eye_pos(),
+            projector.get_eye_pos()
+        ), (5, windowSize[1] - 5), windowSize, scale=(1.0, 1.0),
                              backColor=textBackgroundColor)
 
         # respond key press
