@@ -438,7 +438,7 @@ if __name__ == '__main__':
 
 
     # clean up VAO
-    glDeleteVertexArrays(1, [triangleVAO])
+    glDeleteVertexArrays(2, [triangleVAO, sphereVAO])
     # clean up VBO
     cubeDataVBO.delete()
     sphereDataVBO.delete()

@@ -131,7 +131,6 @@ def get_camera_vectors(cam):
 
     return eyePos, base, x, y
 
-get_camera_vectors(camera)
 
 # resource-taking objects
 resObjs = []

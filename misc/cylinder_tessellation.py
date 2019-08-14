@@ -1,12 +1,13 @@
 import numpy as np
 
 
-def _sphere_pos(theta, phi):
-    xs = np.sin(theta) * np.cos(phi)
-    ys = np.sin(theta) * np.sin(phi)
-    zs = np.cos(theta)
+def _circle_pos(theta):
+    theta = np.asarray(theta)
+    x = np.cos(theta)
+    y = np.zeros(theta.size, np.float)
+    z = np.sin(theta)
+    return np.stack([x, y, z], axis=1)
 
-    return np.stack([xs, ys, zs], axis=2)
 
 class _Triangle:
 
@@ -23,20 +24,28 @@ class _Triangle:
             self.generate_normal()
 
     def generate_normal(self):
-        norms = np.linalg.norm(self.vertices, axis=1)
         self.normals = np.copy(self.vertices)
+        self.normals[:, 1].fill(0.0)
+        norms = np.linalg.norm(self.normals, axis=1)
         for i in range(3):
             self.normals[i, :] /= norms[i]
 
 
-def uniform_tessellate_half_sphere(thetaStep = 15, phiStep = 30):
-    assert thetaStep > 1 and phiStep > 1
+def uniform_tessellate_half_cylinder(hStep = 12, vStep = 12):
+    assert hStep > 1 and vStep > 1
 
-    thetaTicks = np.linspace(np.pi / 2.0, 0, thetaStep)
-    phiTicks = np.linspace(0, 2.0 * np.pi, phiStep)
+    thetaTicks = np.linspace(0.0, np.pi, hStep)
+    vTicks = np.linspace(0.0, 1.0, vStep)
 
-    tv, pv = np.meshgrid(thetaTicks, phiTicks, indexing='ij')
-    sphereGrid = _sphere_pos(tv, pv)
+    hPos = _circle_pos(thetaTicks)
+
+    cylinderGrid = []
+
+    for i in range(vStep):
+        gridPos = hPos + np.asarray([0.0, vTicks[i], 0.0])
+        cylinderGrid.append(gridPos)
+
+    cylinderGrid = np.asarray(cylinderGrid)
 
     triVertexIndex1 = ([0, 2, 1], ...)
     triVertexIndex2 = ([1, 2, 3], ...)
@@ -44,13 +53,13 @@ def uniform_tessellate_half_sphere(thetaStep = 15, phiStep = 30):
     triangles = []
 
     # create triangles
-    for i in range(thetaStep - 1):
-        for j in range(phiStep - 1):
+    for i in range(vStep - 1):
+        for j in range(hStep - 1):
             vertexIndices = (
                 [i, i, i + 1, i + 1],
                 [j, j + 1, j, j + 1]
             )
-            vertices = sphereGrid[vertexIndices]
+            vertices = cylinderGrid[vertexIndices]
 
             triangle1 = _Triangle(vertices[triVertexIndex1], True)
             triangle2 = _Triangle(vertices[triVertexIndex2], True)
