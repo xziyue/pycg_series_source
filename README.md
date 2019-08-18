@@ -1,4 +1,4 @@
-# PyOpenGL Tutorial Source
+# PyCG Source
 
 This is the source repo of the series on <https://www.alanshawn.com/pyopengl_series/>.
 
@@ -7,4 +7,4 @@ Please add this directory to the PYTHONPATH environment variable.
 
 
 
-**If there is segmentation faults, please disable debug output.**
+**If there are segmentation faults please disable debug output.**
