@@ -209,39 +209,3 @@ class SpringMassGrid:
         self.pos = newPos
         self.normal = self.compute_normal()
         return np.copy(newAcc), np.copy(newVlc), np.copy(newPos)
-
-
-
-grid = SpringMassGrid(15, 15, [0, 0, 0], 0.1, 10.0, 0.2, 0.02, 0.05, 0.05)
-grid.compute_normal()
-
-
-'''
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-
-
-fig, ax = plt.subplots()
-ax.set_xlim(-3.5, 7)
-ax.set_ylim(-7, 4)
-ln, = plt.plot([], [], '.')
-
-def update(frame):
-    _, _, pos = grid.get_new_state_and_update(0.03)
-    pos = pos.squeeze()
-    pos = pos.reshape((pos.shape[0] * pos.shape[1], -1))
-    ln.set_data(pos[:, 0], pos[:, 1])
-    return ln,
-
-import time
-
-start = time.time()
-for i in range(100):
-    grid.get_new_state_and_update(0.01)
-end = time.time()
-print((start - end) / 100.0)
-
-
-ani = FuncAnimation(fig, update, frames = np.linspace(0, 100, 600))
-plt.show()
-'''
